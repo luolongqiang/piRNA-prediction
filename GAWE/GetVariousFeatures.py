@@ -1,24 +1,25 @@
+#**********************
 # -*- coding: utf-8 -*-
 #author: longqiang luo
+#data: 2015-12-20
+#**********************
 
+import os, sys, time, argparse
 import numpy as np
 from numpy import array
 from itertools import combinations, combinations_with_replacement, permutations
 from repDNA.nac import RevcKmer
 from repDNA.psenac import PCPseDNC,PCPseTNC,SCPseDNC,SCPseTNC
-import multiprocessing
-import time
-import sys
+from multiprocessing import Pool, cpu_count
 
-def GetSequences(f):
+alphabet=['A','C','G','T']
+
+def GetSequences(input_txt):
     seqslst=[]
-    while True:
-         s=f.readline()
-         if not s:
-             break
-         else:
-             if '>' not in s:
-                seq=s.split('\n')[0]
+    with open(input_txt, 'r') as f:
+        for s in f:
+            if '>' not in s:
+                seq=s.strip()
                 seqslst.append(seq)
     return seqslst
 
@@ -34,16 +35,8 @@ def GetKmerDict(alphabet,k):
     return kmerdict
   
 ############################### Spectrum Profile ##############################
-def GetSpectrumProfile(instances, alphabet, k):
-    kmerdict=GetKmerDict(alphabet, k)
-    X=[]
-    for sequence in instances:
-        vector=GetSpectrumProfileVector(sequence, kmerdict, k)
-        X.append(vector)
-    X=array(X)    
-    return X
-
-def GetSpectrumProfileVector(sequence, kmerdict, k):    
+def GetSpectrumProfileVector(args):   
+    sequence, kmerdict, k = args[0], args[1], args[2] 
     vector=np.zeros((1,len(kmerdict)))
     n=len(sequence)
     for i in range(n-k+1):
@@ -53,16 +46,8 @@ def GetSpectrumProfileVector(sequence, kmerdict, k):
     return list(vector[0])
     
 ############################### Mismatch Profile ##############################
-def GetMismatchProfile(instances, alphabet, k, m):
-    kmerdict=GetKmerDict(alphabet, k)
-    X=[]
-    for sequence in instances:
-        vector=GetMismatchProfileVector(sequence, alphabet, kmerdict, k)
-        X.append(vector)  
-    X=array(X)    
-    return X
-
-def GetMismatchProfileVector(sequence, alphabet, kmerdict, k):    
+def GetMismatchProfileVector(args):  
+    sequence, kmerdict, k = args[0], args[1], args[2]   
     vector=np.zeros((1,len(kmerdict)))
     n=len(sequence)
     for i in range(n-k+1):
@@ -80,47 +65,8 @@ def GetMismatchProfileVector(sequence, alphabet, kmerdict, k):
     return list(vector[0])
 
 ############################# Subsequence Profile ############################# 
-def GetSubsequenceProfileByParallel(instances, alphabet, k, delta):
-    cpu_num=multiprocessing.cpu_count()   
-    batches=ConstructPartitions(instances, cpu_num)
-    pool = multiprocessing.Pool(cpu_num)
-    results=[]
-    for batch in batches:
-        temp=pool.apply_async(GetSubsequenceProfile, (batch, alphabet, k, delta))
-        results.append(temp)
-    pool.close()
-    pool.join()
-    i=1
-    for temp in results:
-        temp_X=temp.get()
-        if i==1:
-            X=temp_X
-        else:
-            X=np.vstack((X,temp_X))
-        i+=1
-    return X
-    
-def ConstructPartitions(instances, cpu_num):
-    seqs_num=len(instances)
-    batch_num=seqs_num//cpu_num
-    batches=[]
-    for i in range(cpu_num-1):
-        batch=instances[i*batch_num:(i+1)*batch_num]
-        batches.append(batch)
-    batch=instances[(cpu_num-1)*batch_num:]
-    batches.append(batch)
-    return batches
-    
-def GetSubsequenceProfile(instances, alphabet, k, delta):
-    kmerdict=GetKmerDict(alphabet, k)
-    X=[]
-    for sequence in instances:
-        vector=GetSubsequenceProfileVector(sequence, kmerdict, k, delta)
-        X.append(vector)
-    X=array(X)    
-    return X
-
-def GetSubsequenceProfileVector(sequence, kmerdict, k, delta):      
+def GetSubsequenceProfileVector(args):  
+    sequence, kmerdict, k, delta = args[0], args[1], args[2], args[3]   
     vector=np.zeros((1,len(kmerdict)))
     sequence=array(list(sequence))
     n=len(sequence)
@@ -174,15 +120,6 @@ def GetSCPseTNC(lamada):
     return X 
 
 ############################### Sparse Profile ################################
-def GetSparseProfile(instances,alphabet,vdim):
-    sparse_dict=GetSparseDict(alphabet)
-    X=[]
-    for sequence in instances:
-        vector=GetSparseProfileVector(sequence,sparse_dict,vdim)
-        X.append(vector)
-    X=array(X)
-    return X
-
 def GetSparseDict(alphabet):
     alphabet_num=len(alphabet)
     identity_matrix=np.eye(alphabet_num+1)
@@ -190,7 +127,8 @@ def GetSparseDict(alphabet):
     sparse_dict['E']=identity_matrix[alphabet_num]
     return sparse_dict
 
-def GetSparseProfileVector(sequence,sparse_dict,vdim):
+def GetSparseProfileVector(args):
+    sequence, sparse_dict, vdim = args[0], args[1], args[2]
     seq_length=len(sequence)
     sequence=sequence+'E'*(vdim-seq_length) if seq_length<=vdim else sequence[0:vdim]   
     vector=sparse_dict.get(sequence[0])
@@ -200,7 +138,7 @@ def GetSparseProfileVector(sequence,sparse_dict,vdim):
     return vector
 
 ######################## Position-Specific Scoring Matrix #####################
-def GetPssmMatrix(train_seqs, y_train, vdim, alphabet):
+def GetPssmMatrix(train_seqs, y_train, vdim):
     alphabet_num=len(alphabet)
     alphabet_dict={alphabet[i]:i for i in range(alphabet_num)}
     posi_train_seqs=train_seqs[list(y_train)]
@@ -225,30 +163,52 @@ def GetFeatureFromPssm(seqs, pssm, vdim, alphabet_dict):
                 row_index=alphabet_dict.get(seqs[i][j])
                 features[i,j]=pssm[row_index,j]    
     return features
+######################### arguments of command line ##############################
+def GetArgs():
+    parser = argparse.ArgumentParser(description='get various features of piRNA sequences')
+    parser.add_argument('-posi', dest='posi', 
+        help='positive samples', default=None, type=str)
+    parser.add_argument('-nega', dest='nega',
+        help='negative samples', default=None, type=str)
+    parser.add_argument('-output', dest='output',
+        help='output directory of feature vectors', default=None, type=str)
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
+    args = parser.parse_args()
+    return args
     
-###############################################################################
+##################################################################################
     
 if __name__ == '__main__':
 
-    global posi_samples_file
-    global nega_samples_file
-    posi_samples_file=sys.argv[1]
-    nega_samples_file=sys.argv[2]
+    global posi_samples_file, nega_samples_file
+
+    args = GetArgs()
+    posi_samples_file=args.posi
+    nega_samples_file=args.nega
+    output_dir = args.output
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+
     animal=posi_samples_file.split('_')[0]
-    fp=open(posi_samples_file,'r')
-    posis=GetSequences(fp)
-    fn=open(nega_samples_file,'r')
-    negas=GetSequences(fn)   
+    posis=GetSequences(posi_samples_file)
+    negas=GetSequences(nega_samples_file)   
     instances=array(posis+negas)
-    alphabet=['A','C','G','T']
+    labels=array([1]*len(posis)+[0]*len(negas)) 
+    np.savetxt(os.path.join(output_dir, 'Labels.txt'), labels)
+    num = len(instances)
+    pool = Pool(int(cpu_count()*3/4))
     
     # Spectrum Profile for k=1,2,3,4,5
     for k in range(1,6):
         print('..........................................................................')
         print('Coding for feature:'+str(k)+'-Spectrum Profile, beginning')
         tic=time.clock()
-        X=GetSpectrumProfile(instances,alphabet,k)
-        np.savetxt(str(k)+'-SpectrumProfileFeature'+animal+'.txt',X)
+        kmerdict=GetKmerDict(alphabet, k)
+        X = pool.map(GetSpectrumProfileVector, zip(instances, num*[kmerdict], num*[k])) 
+        output_txt = os.path.join(output_dir, str(k)+'-SpectrumProfileFeature'+animal+'.txt')
+        np.savetxt(output_txt, array(X))
         toc=time.clock()
         print('Coding time:%.3f minutes'%((toc-tic)/60))
         
@@ -257,38 +217,44 @@ if __name__ == '__main__':
         print('..........................................................................')
         print('Coding for feature:'+str((k,m))+'-Mismatch Profile, beginning')
         tic=time.clock()
-        X=GetMismatchProfile(instances,alphabet,k,m)
-        np.savetxt(str((k,m))+'-MismatchProfileFeature'+animal+'.txt',X)
+        kmerdict=GetKmerDict(alphabet, k)
+        X = pool.map(GetMismatchProfileVector, zip(instances, num*[kmerdict], num*[k])) 
+        output_txt = os.path.join(output_dir, str((k,m))+'-MismatchProfileFeature'+animal+'.txt')
+        np.savetxt(output_txt, array(X))
         toc=time.clock()
         print('Coding time:%.3f minutes'%((toc-tic)/60))    
-
+    
     # Subsequence Profile for (k,delta)=(3,1),(4,1),(5,1)
     for (k,delta) in [(3,1),(4,1),(5,1)]:
         print('..........................................................................')
         print('Coding for feature:'+str((k,delta))+'-Subsequence Profile, beginning')
         print('The process may spend some time, please do not close the program')
         tic=time.clock()
-        X=GetSubsequenceProfileByParallel(instances,alphabet,k,delta)
-        np.savetxt(str((k,delta))+'-SubsequenceProfileFeature'+animal+'.txt',X)
+        kmerdict=GetKmerDict(alphabet, k)
+        X = pool.map(GetSubsequenceProfileVector, zip(instances, num*[kmerdict], num*[k], num*[delta])) 
+        output_txt = os.path.join(output_dir, str((k,delta))+'-SubsequenceProfileFeature'+animal+'.txt')
+        np.savetxt(output_txt, array(X))
         toc=time.clock()
         print('Coding time:%.3f minutes'%((toc-tic)/60)) 
-        
+  
     # Reverse Compliment Kmer for k=1,2,3,4,5
     for k in range(1,6):
         print('..........................................................................')
         print('Coding for feature:'+str(k)+'-RevcKmer, beginning')
         tic=time.clock()
         X=GetRevcKmer(k)
-        np.savetxt(str(k)+'-RevcKmerFeature'+animal+'.txt',X)
+        output_txt = os.path.join(output_dir, str(k)+'-RevcKmerFeature'+animal+'.txt')
+        np.savetxt(output_txt, X)
         toc=time.clock()
         print('Coding time:%.3f minutes'%((toc-tic)/60))
-        
+       
     # Parallel Correlation Pseudo Dinucleotide Composition   
     print('..........................................................................')
     print('Coding for feature:PCPseDNC, beginning')
     tic=time.clock()
     X=GetPCPseDNC(1,phyche_list=['Twist', 'Tilt', 'Roll', 'Shift', 'Slide', 'Rise'])
-    np.savetxt('PCPseDNCFeature'+animal+'.txt',X)
+    output_txt = os.path.join(output_dir, 'PCPseDNCFeature'+animal+'.txt')
+    np.savetxt(output_txt, X)
     toc=time.clock()
     print('Coding time:%.3f minutes'%((toc-tic)/60))
 
@@ -297,7 +263,8 @@ if __name__ == '__main__':
     print('Coding for feature:PCPseTNC, beginning')
     tic=time.clock()
     X=GetPCPseTNC(1)
-    np.savetxt('PCPseTNCFeature'+animal+'.txt',X)
+    output_txt = os.path.join(output_dir, 'PCPseTNCFeature'+animal+'.txt')
+    np.savetxt(output_txt, X)
     toc=time.clock()
     print('Coding time:%.3f minutes'%((toc-tic)/60))
     
@@ -306,7 +273,8 @@ if __name__ == '__main__':
     print('Coding for feature:SCPseDNC, beginning')
     tic=time.clock()
     X=GetSCPseDNC(1,phyche_list=['Twist', 'Tilt', 'Roll', 'Shift', 'Slide', 'Rise'])
-    np.savetxt('SCPseDNCFeature'+animal+'.txt',X)
+    output_txt = os.path.join(output_dir, 'SCPseDNCFeature'+animal+'.txt')
+    np.savetxt(output_txt, X)
     toc=time.clock()
     print('Coding time:%.3f minutes'%((toc-tic)/60))
     
@@ -315,7 +283,8 @@ if __name__ == '__main__':
     print('Coding for feature:SCPseTNC, beginning')
     tic=time.clock()
     X=GetSCPseTNC(1)
-    np.savetxt('SCPseTNCFeature'+animal+'.txt',X)
+    output_txt = os.path.join(output_dir, 'SCPseTNCFeature'+animal+'.txt')
+    np.savetxt(output_txt, X)
     toc=time.clock()
     print('Coding time:%.3f minutes'%((toc-tic)/60))  
     
@@ -323,8 +292,11 @@ if __name__ == '__main__':
     print('..........................................................................')
     print('Coding for feature:Sparse Profile, beginning')
     tic=time.clock()
-    X=GetSparseProfile(instances,alphabet,vdim=35)
-    np.savetxt('SparseProfileFeature'+animal+'.txt',X)
+    sparse_dict=GetSparseDict(alphabet)
+    vdim = 35
+    X = pool.map(GetSparseProfileVector, zip(instances, num*[sparse_dict], num*[vdim])) 
+    output_txt = os.path.join(output_dir, 'SparseProfileFeature'+animal+'.txt')
+    np.savetxt(output_txt, array(X))
     toc=time.clock()
     print('Coding time:%.3f minutes'%((toc-tic)/60))
     
