@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 #author: longqiang luo
+#date: 2015-12-26
 
 import numpy as np
 from numpy import array
