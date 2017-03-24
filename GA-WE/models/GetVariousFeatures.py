@@ -1,7 +1,7 @@
 #**********************
 # -*- coding: utf-8 -*-
 #author: longqiang luo
-#data: 2015-12-20
+#date: 2015-12-26
 #**********************
 
 import os, sys, time, argparse
