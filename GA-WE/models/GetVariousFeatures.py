@@ -31,7 +31,7 @@ def GetKmerDict(alphabet,k):
         strlst=[''.join(ele) for ele in elelst]
         kmerlst+=strlst
     kmerlst=np.sort(kmerlst)
-    kmerdict={kmer:i for kmer, i in enumerate(kmerlst)}
+    kmerdict={kmer:i for i, kmer in enumerate(kmerlst)}
     return kmerdict
   
 ############################### Spectrum Profile ##############################
@@ -48,7 +48,7 @@ def GetSpectrumProfileVector(args):
 ############################### Mismatch Profile ##############################
 def GetMismatchProfileVector(args):  
     sequence, kmerdict, k = args[0], args[1], args[2]   
-    vector=np.zeros((1,len(kmerdict)))
+    vector=np.zeros(len(kmerdict))
     n=len(sequence)
     for i in range(n-k+1):
         subsequence=sequence[i:i+k]
@@ -61,13 +61,13 @@ def GetMismatchProfileVector(args):
                 substitution[j]=letter
                 substitution=''.join(substitution)
                 position=kmerdict.get(substitution)
-                vector[0,position]+=1    
-    return list(vector[0])
+                vector[position]+=1    
+    return list(vector)
 
 ############################# Subsequence Profile ############################# 
 def GetSubsequenceProfileVector(args):  
     sequence, kmerdict, k, delta = args[0], args[1], args[2], args[3]   
-    vector=np.zeros((1,len(kmerdict)))
+    vector=np.zeros(len(kmerdict))
     sequence=array(list(sequence))
     n=len(sequence)
     index_lst=list(combinations(range(n), k))
@@ -77,8 +77,8 @@ def GetSubsequenceProfileVector(args):
         position=kmerdict.get(''.join(subsequence))     
         subseq_length=subseq_index[-1] - subseq_index[0] + 1
         subseq_score=1 if subseq_length==k else delta**subseq_length    
-        vector[0,position]+=subseq_score
-    return list(vector[0])
+        vector[position]+=subseq_score
+    return list(vector)
     
 ########################### Reverse Compliment Kmer ###########################
 def GetRevcKmer(k):
