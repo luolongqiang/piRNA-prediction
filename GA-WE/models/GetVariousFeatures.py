@@ -31,7 +31,7 @@ def GetKmerDict(alphabet,k):
         strlst=[''.join(ele) for ele in elelst]
         kmerlst+=strlst
     kmerlst=np.sort(kmerlst)
-    kmerdict={kmerlst[i]:i for i in range(len(kmerlst))}
+    kmerdict={kmer:i for kmer, i in enumerate(kmerlst)}
     return kmerdict
   
 ############################### Spectrum Profile ##############################
