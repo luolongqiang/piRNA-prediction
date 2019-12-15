@@ -162,9 +162,3 @@ if __name__ == '__main__':
     toc=time.clock()               
     print('Total running time:%.3f minutes'%((toc-tic)/60))
     print('*****************************************************************************\n')
-
-    
-        
-    
-    
-    
